@@ -6,9 +6,22 @@
   <title>Gemini AI アシスタント</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #121212; color: #e0e0e0; display: flex; height: 100vh; overflow: hidden; }
     
-    .sidebar { position: fixed; top: 0; left: -260px; width: 260px; height: 100vh; background: #1e1e1e; border-right: 1px solid #2c2c2c; transition: left 0.3s ease; z-index: 100; display: flex; flex-direction: column; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: #121212;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    
+    body {
+      display: flex;
+      height: 100vh;
+      height: -webkit-fill-available;
+    }
+
+    .sidebar { position: fixed; top: 0; left: -260px; width: 260px; height: 100%; background: #1e1e1e; border-right: 1px solid #2c2c2c; transition: left 0.3s ease; z-index: 100; display: flex; flex-direction: column; }
     .sidebar.open { left: 0; }
     .sidebar-header { padding: 16px; border-bottom: 1px solid #2c2c2c; display: flex; justify-content: space-between; align-items: center; }
     .btn-new-chat { width: 100%; padding: 10px; background: #0a84ff; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 8px; }
@@ -19,27 +32,70 @@
     .overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); display: none; z-index: 90; }
     .overlay.show { display: block; }
 
-    .main-content { flex: 1; display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+    .main-content { 
+      flex: 1; 
+      display: flex; 
+      flex-direction: column; 
+      height: 100%; 
+      width: 100vw; 
+      position: relative;
+    }
 
-    .top-bar { background: #1e1e1e; padding: 12px; border-bottom: 1px solid #2c2c2c; display: flex; gap: 8px; align-items: center; }
+    .top-bar { background: #1e1e1e; padding: 12px; border-bottom: 1px solid #2c2c2c; display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
     .btn-menu { background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 0 8px; }
     input[type="password"] { flex: 1; padding: 8px 12px; border: 1px solid #3d3d3d; border-radius: 8px; font-size: 14px; background: #2a2a2a; color: #fff; }
 
-    .chat-container { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: #121212; }
+    .chat-container { 
+      flex: 1; 
+      overflow-y: auto; 
+      padding: 16px; 
+      padding-bottom: 20px;
+      display: flex; 
+      flex-direction: column; 
+      gap: 12px; 
+      background: #121212; 
+      -webkit-overflow-scrolling: touch;
+    }
     
-    .msg { max-width: 80%; padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-break: break-word; }
+    .msg { max-width: 85%; padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-break: break-word; }
     .msg.user { align-self: flex-end; background: #0a84ff; color: #ffffff; border-bottom-right-radius: 4px; }
     .msg.ai { align-self: flex-start; background: #2c2c2e; color: #e0e0e0; border: 1px solid #3a3a3c; border-bottom-left-radius: 4px; }
     .msg img { max-width: 100%; border-radius: 8px; margin-bottom: 8px; display: block; }
 
-    .preview-bar { display: none; background: #2c2c2e; padding: 8px 16px; align-items: center; gap: 8px; font-size: 13px; color: #aaa; border-top: 1px solid #3a3a3c; }
+    .preview-bar { display: none; background: #2c2c2e; padding: 8px 16px; align-items: center; gap: 8px; font-size: 13px; color: #aaa; border-top: 1px solid #3a3a3c; flex-shrink: 0; }
     .preview-bar img { height: 40px; border-radius: 4px; }
 
-    .input-bar { background: #1e1e1e; padding: 12px; border-top: 1px solid #2c2c2c; display: flex; gap: 8px; align-items: center; }
-    textarea { flex: 1; padding: 10px; border: 1px solid #3d3d3d; border-radius: 12px; font-size: 15px; resize: none; height: 44px; outline: none; background: #2a2a2a; color: #fff; }
+    /* ★画面下にピッタリ固定する入力バー */
+    .input-bar { 
+      background: #1e1e1e; 
+      padding: 10px 12px; 
+      padding-bottom: max(10px, env(safe-area-inset-bottom)); 
+      border-top: 1px solid #2c2c2c; 
+      display: flex; 
+      gap: 8px; 
+      align-items: center; 
+      flex-shrink: 0;
+      position: sticky;
+      bottom: 0;
+      z-index: 10;
+    }
     
-    .btn-attach { background: #2c2c2e; color: #fff; border: 1px solid #3a3a3c; padding: 0 12px; height: 44px; border-radius: 12px; font-size: 18px; cursor: pointer; }
-    .btn-send { background: #0a84ff; color: white; border: none; padding: 0 18px; height: 44px; border-radius: 12px; font-weight: bold; cursor: pointer; }
+    /* 文字サイズ16pxでスマホの勝手なズームを防止 */
+    textarea { 
+      flex: 1; 
+      padding: 10px; 
+      border: 1px solid #3d3d3d; 
+      border-radius: 12px; 
+      font-size: 16px; 
+      resize: none; 
+      height: 44px; 
+      outline: none; 
+      background: #2a2a2a; 
+      color: #fff; 
+    }
+    
+    .btn-attach { background: #2c2c2e; color: #fff; border: 1px solid #3a3a3c; padding: 0 12px; height: 44px; border-radius: 12px; font-size: 18px; cursor: pointer; flex-shrink: 0; }
+    .btn-send { background: #0a84ff; color: white; border: none; padding: 0 18px; height: 44px; border-radius: 12px; font-weight: bold; cursor: pointer; flex-shrink: 0; }
     .btn-send:disabled { background: #48484a; color: #8e8e93; }
   </style>
 </head>
@@ -259,7 +315,6 @@
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
         
-        // ★ Google Search Grounding（自動検索機能）を追加！
         const requestBody = {
           contents: session.apiHistory,
           tools: [{ googleSearch: {} }]
