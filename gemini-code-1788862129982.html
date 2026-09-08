@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Gemini AI アシスタント</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #121212; color: #e0e0e0; display: flex; height: 100vh; overflow: hidden; }
+    
+    /* 左サイドバー */
+    .sidebar { position: fixed; top: 0; left: -260px; width: 260px; height: 100vh; background: #1e1e1e; border-right: 1px solid #2c2c2c; transition: left 0.3s ease; z-index: 100; display: flex; flex-direction: column; }
+    .sidebar.open { left: 0; }
+    .sidebar-header { padding: 16px; border-bottom: 1px solid #2c2c2c; display: flex; justify-content: space-between; align-items: center; }
+    .btn-new-chat { width: 100%; padding: 10px; background: #0a84ff; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+    .chat-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+    .chat-item { padding: 12px; border-radius: 8px; font-size: 14px; color: #ccc; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #2a2a2a; }
+    .chat-item.active { background: #3a3a3c; color: #fff; border-left: 4px solid #0a84ff; }
+    
+    /* サイドバー背景の暗幕 */
+    .overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); display: none; z-index: 90; }
+    .overlay.show { display: block; }
+
+    /* メイン画面 */
+    .main-content { flex: 1; display: flex; flex-direction: column; height: 100vh; width: 100vw; }
+
+    .top-bar { background: #1e1e1e; padding: 12px; border-bottom: 1px solid #2c2c2c; display: flex; gap: 8px; align-items: center; }
+    .btn-menu { background: none; border: none; color: #fff; font-size: 20px; cursor: pointer; padding: 0 8px; }
+    input[type="password"] { flex: 1; padding: 8px 12px; border: 1px solid #3d3d3d; border-radius: 8px; font-size: 14px; background: #2a2a2a; color: #fff; }
+
+    .chat-container { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: #121212; }
+    
+    .msg { max-width: 80%; padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.5; word-break: break-word; }
+    .msg.user { align-self: flex-end; background: #0a84ff; color: #ffffff; border-bottom-right-radius: 4px; }
+    .msg.ai { align-self: flex-start; background: #2c2c2e; color: #e0e0e0; border: 1px solid #3a3a3c; border-bottom-left-radius: 4px; }
+    .msg img { max-width: 100%; border-radius: 8px; margin-bottom: 8px; display: block; }
+
+    .preview-bar { display: none; background: #2c2c2e; padding: 8px 16px; align-items: center; gap: 8px; font-size: 13px; color: #aaa; border-top: 1px solid #3a3a3c; }
+    .preview-bar img { height: 40px; border-radius: 4px; }
+
+    .input-bar { background: #1e1e1e; padding: 12px; border-top: 1px solid #2c2c2c; display: flex; gap: 8px; align-items: center; }
+    textarea { flex: 1; padding: 10px; border: 1px solid #3d3d3d; border-radius: 12px; font-size: 15px; resize: none; height: 44px; outline: none; background: #2a2a2a; color: #fff; }
+    
+    .btn-attach { background: #2c2c2e; color: #fff; border: 1px solid #3a3a3c; padding: 0 12px; height: 44px; border-radius: 12px; font-size: 18px; cursor: pointer; }
+    .btn-send { background: #0a84ff; color: white; border: none; padding: 0 18px; height: 44px; border-radius: 12px; font-weight: bold; cursor: pointer; }
+    .btn-send:disabled { background: #48484a; color: #8e8e93; }
+  </style>
+</head>
+<body>
+
+  <!-- 暗幕 -->
+  <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+
+  <!-- スワイプ展開サイドバー -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span style="font-weight:bold;">会話履歴</span>
+      <button onclick="closeSidebar()" style="background:none; border:none; color:#aaa; font-size:18px; cursor:pointer;">✕</button>
+    </div>
+    <div style="padding: 0 8px;">
+      <button class="btn-new-chat" onclick="createNewChat()">＋ 新しいチャット</button>
+    </div>
+    <div class="chat-list" id="chatList"></div>
+  </div>
+
+  <!-- メイン画面 -->
+  <div class="main-content">
+    <div class="top-bar">
+      <button class="btn-menu" onclick="toggleSidebar()">≡</button>
+      <input type="password" id="apiKey" placeholder="Gemini APIキーを入力" onchange="saveKey()">
+    </div>
+
+    <div class="chat-container" id="chatContainer"></div>
+
+    <div class="preview-bar" id="previewBar">
+      <img id="previewImg" src="" alt="preview">
+      <span>画像が選択されています</span>
+      <button onclick="clearImage()" style="margin-left:auto; border:none; background:none; color:#ff453a; cursor:pointer;">✕ 削除</button>
+    </div>
+
+    <div class="input-bar">
+      <button class="btn-attach" onclick="document.getElementById('fileInput').click()">📷</button>
+      <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleFile(event)">
+      <textarea id="userInput" placeholder="メッセージを入力..." onkeydown="handleKey(event)"></textarea>
+      <button class="btn-send" id="sendBtn" onclick="sendMessage()">送信</button>
+    </div>
+  </div>
+
+  <script>
+    const MODEL_NAME = "gemini-3.6-flash";
+    const chatContainer = document.getElementById('chatContainer');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('overlay');
+    const chatList = document.getElementById('chatList');
+    
+    let currentBase64 = null;
+    let currentMimeType = null;
+
+    const PROVERBS = [
+      "【猿も木から落ちる】どんな名人でも時には失敗することがあるということ。",
+      "【犬も歩けば棒に当たる】何か行動を起こせば、思いがけない幸運（または災難）に出会うこと。",
+      "【石の上にも三年】辛くても辛抱強く続ければ、必ず成果が出るということ。",
+      "【情けは人の為ならず】人に親切にすることは、巡り巡って自分に良い報いとなって返ってくるということ。",
+      "【塵も積もれば山となる】ごく微小なものでも、積み重なると大きなものになるということ。"
+    ];
+
+    const SYSTEM_INSTRUCTION = {
+      role: "user",
+      parts: [{
+        text: "【指示】あなたは親しみやすく自然な敬語（〜です、〜ます体）で会話するAIアシスタントです。日常会話に合ったトーンで話し、ネタにはノリ良く対応し、画像は正確に解説してください。"
+      }]
+    };
+
+    let allSessions = []; // 全チャットセッションの配列
+    let currentSessionId = null;
+
+    // スワイプ検知用
+    let touchStartX = 0;
+
+    window.addEventListener('load', () => { 
+      loadKey(); 
+      loadSessions();
+      setupSwipe();
+    });
+
+    // スワイプ操作でサイドバーを開閉
+    function setupSwipe() {
+      document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, false);
+      document.addEventListener('touchend', e => {
+        const touchEndX = e.changedTouches[0].clientX;
+        // 左端から右へスワイプで開く
+        if (touchStartX < 30 && touchEndX - touchStartX > 50) openSidebar();
+        // 右から左へスワイプで閉じる
+        if (touchStartX - touchEndX > 50 && sidebar.classList.contains('open')) closeSidebar();
+      }, false);
+    }
+
+    function toggleSidebar() { sidebar.classList.contains('open') ? closeSidebar() : openSidebar(); }
+    function openSidebar() { sidebar.classList.add('open'); overlay.classList.add('show'); }
+    function closeSidebar() { sidebar.classList.remove('open'); overlay.classList.remove('show'); }
+
+    function saveKey() { localStorage.setItem('gemini_chat_key', document.getElementById('apiKey').value); }
+    function loadKey() { const k = localStorage.getItem('gemini_chat_key'); if(k) document.getElementById('apiKey').value = k; }
+
+    function loadSessions() {
+      const saved = localStorage.getItem('gemini_all_sessions');
+      if (saved) {
+        allSessions = JSON.parse(saved);
+      }
+      if (allSessions.length === 0) {
+        createNewChat();
+      } else {
+        currentSessionId = allSessions[0].id;
+        renderSidebar();
+        renderCurrentChat();
+      }
+    }
+
+    function saveSessions() {
+      localStorage.setItem('gemini_all_sessions', JSON.stringify(allSessions));
+      renderSidebar();
+    }
+
+    function createNewChat() {
+      const newSession = {
+        id: Date.now().toString(),
+        title: "新しいチャット",
+        apiHistory: [SYSTEM_INSTRUCTION],
+        displayHistory: []
+      };
+      allSessions.unshift(newSession);
+      currentSessionId = newSession.id;
+      saveSessions();
+      renderCurrentChat();
+      closeSidebar();
+    }
+
+    function selectSession(id) {
+      currentSessionId = id;
+      renderSidebar();
+      renderCurrentChat();
+      closeSidebar();
+    }
+
+    function getCurrentSession() {
+      return allSessions.find(s => s.id === currentSessionId);
+    }
+
+    function renderSidebar() {
+      chatList.innerHTML = '';
+      allSessions.forEach(s => {
+        const div = document.createElement('div');
+        div.className = `chat-item ${s.id === currentSessionId ? 'active' : ''}`;
+        div.innerText = s.title;
+        div.onclick = () => selectSession(s.id);
+        chatList.appendChild(div);
+      });
+    }
+
+    function renderCurrentChat() {
+      chatContainer.innerHTML = '';
+      const session = getCurrentSession();
+      if (!session) return;
+
+      if (session.displayHistory.length === 0) {
+        appendMessage("準備完了です！何か質問や話したいことがあれば、いつでもどうぞ！", 'ai', false, false);
+      } else {
+        session.displayHistory.forEach(item => {
+          appendMessage(item.content, item.side, item.isHTML, false);
+        });
+      }
+    }
+
+    function handleKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
+
+    function handleFile(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const dataUrl = evt.target.result;
+        currentMimeType = dataUrl.split(';')[0].split(':')[1];
+        currentBase64 = dataUrl.split(',')[1];
+
+        document.getElementById('previewImg').src = dataUrl;
+        document.getElementById('previewBar').style.display = 'flex';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearImage() {
+      currentBase64 = null;
+      currentMimeType = null;
+      document.getElementById('fileInput').value = '';
+      document.getElementById('previewBar').style.display = 'none';
+    }
+
+    function getRandomProverb() {
+      return PROVERBS[Math.floor(Math.random() * PROVERBS.length)];
+    }
+
+    async function sendMessage() {
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const text = userInput.value.trim();
+
+      if (!apiKey) { alert("APIキーを入力してください！"); return; }
+      if (!text && !currentBase64) return;
+
+      const session = getCurrentSession();
+      const userParts = [];
+      let userMsgHTML = "";
+
+      if (currentBase64) {
+        userParts.push({ inline_data: { mime_type: currentMimeType, data: currentBase64 } });
+        userMsgHTML += `<img src="data:${currentMimeType};base64,${currentBase64}"><br>`;
+      }
+
+      if (text) {
+        userParts.push({ text: text });
+        userMsgHTML += escapeHtml(text);
+      }
+
+      // 最初の発言の場合、チャットのタイトル（要約）にする
+      if (session.displayHistory.length === 0) {
+        session.title = text ? (text.length > 15 ? text.substring(0, 15) + "..." : text) : "画像付きチャット";
+      }
+
+      appendMessage(userMsgHTML, 'user', true, true);
+      
+      userInput.value = '';
+      clearImage();
+      sendBtn.disabled = true;
+
+      session.apiHistory.push({ role: "user", parts: userParts });
+
+      const randomProverb = getRandomProverb();
+      const loadingHTML = `<b>考え中...</b><br><br><small style="color:#aaa;">💡 <b>今日のことわざ</b><br>${randomProverb}</small>`;
+      const loadingMsgEl = appendMessage(loadingHTML, 'ai', true, false);
+
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
+        
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: session.apiHistory })
+        });
+
+        const data = await response.json();
+
+        if (data.candidates && data.candidates[0].content) {
+          const reply = data.candidates[0].content.parts[0].text;
+          const formattedReply = escapeHtml(reply).replace(/\n/g, '<br>');
+          loadingMsgEl.innerHTML = formattedReply;
+          
+          session.apiHistory.push({ role: "model", parts: [{ text: reply }] });
+          session.displayHistory.push({ content: formattedReply, side: 'ai', isHTML: true });
+          saveSessions();
+        } else if (data.error) {
+          loadingMsgEl.innerHTML = `<b style="color:#ff453a;">エラー:</b> ${escapeHtml(data.error.message)}`;
+          session.apiHistory.pop();
+        } else {
+          loadingMsgEl.innerText = "応答を受信できませんでした。";
+          session.apiHistory.pop();
+        }
+      } catch (err) {
+        loadingMsgEl.innerText = "通信エラー: " + err.message;
+        session.apiHistory.pop();
+      } finally {
+        sendBtn.disabled = false;
+        scrollToBottom();
+      }
+    }
+
+    function appendMessage(content, side, isHTML = false, shouldSave = false) {
+      const div = document.createElement('div');
+      div.className = `msg ${side}`;
+      if (isHTML) {
+        div.innerHTML = content;
+      } else {
+        div.innerText = content;
+      }
+      chatContainer.appendChild(div);
+      scrollToBottom();
+
+      if (shouldSave) {
+        const session = getCurrentSession();
+        session.displayHistory.push({ content: content, side: side, isHTML: isHTML });
+        saveSessions();
+      }
+
+      return div;
+    }
+
+    function scrollToBottom() {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
+    }
+  </script>
+</body>
+</html>
